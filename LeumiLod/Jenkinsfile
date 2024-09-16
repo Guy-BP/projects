@@ -7,7 +7,7 @@ pipeline {
                 checkout scm
             }
         }
-        
+
         stage('Setup') {
             steps {
                 script {
@@ -29,14 +29,15 @@ pipeline {
                     // Download kubectl
                     def kubectlUrl = 'https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl'
                     def kubectlFile = '/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl'
-                    sh "curl -LO ${kubectlUrl} -o ${kubectlFile} || { echo 'Failed to download kubectl'; exit 1; }"
-                    
-                    // Make kubectl executable
-                    sh "chmod +x ${kubectlFile} || { echo 'Failed to make kubectl executable'; exit 1; }"
+                    sh """
+                    curl -LO ${kubectlUrl} || { echo 'Failed to download kubectl'; exit 1; }
+                    mv kubectl ${kubectlFile} || { echo 'Failed to move kubectl'; exit 1; }
+                    chmod +x ${kubectlFile} || { echo 'Failed to make kubectl executable'; exit 1; }
+                    """
                 }
             }
         }
-        
+
         stage('Build Docker Image') {
             steps {
                 // Add your Docker image build steps here
@@ -71,7 +72,7 @@ pipeline {
             }
         }
     }
-    
+
     post {
         always {
             // Actions to run after the pipeline completes, regardless of success or failure
