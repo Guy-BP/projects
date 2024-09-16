@@ -45,16 +45,18 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh '''
-                        # Verify Dockerfile presence
-                        if [ ! -f Dockerfile ]; then
-                            echo "Dockerfile not found in $(pwd)"
-                            exit 1
-                        fi
+                    dir('LeumiLod') {
+                        sh '''
+                            # Verify Dockerfile presence
+                            if [ ! -f Dockerfile ]; then
+                                echo "Dockerfile not found in $(pwd)"
+                                exit 1
+                            fi
 
-                        # Build Docker image
-                        docker build -t my-app:latest .
-                    '''
+                            # Build Docker image
+                            docker build -t my-app:latest .
+                        '''
+                    }
                 }
             }
         }
