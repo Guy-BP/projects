@@ -2,9 +2,14 @@ pipeline {
     agent any
 
     stages {
-        stage('Declarative: Checkout SCM') {
+        stage('Checkout') {
             steps {
-                checkout scm
+                script {
+                    checkout([$class: 'GitSCM', 
+                        branches: [[name: '*/main']], 
+                        userRemoteConfigs: [[url: 'https://github.com/Guy-BP/projects']]
+                    ])
+                }
             }
         }
 
@@ -15,71 +20,72 @@ pipeline {
                     sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker'
                     sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl'
                     
-                    // Download Docker
-                    def dockerUrl = 'https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz'
-                    def dockerFile = '/var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz'
-                    sh "curl -L ${dockerUrl} -o ${dockerFile} || { echo 'Failed to download Docker'; exit 1; }"
+                    // Download and install Docker
+                    sh '''
+                    curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
+                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 -f /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
+                    rm /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
+                    '''
                     
-                    // Extract Docker
-                    sh "tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 -f ${dockerFile} || { echo 'Failed to extract Docker'; exit 1; }"
-                    
-                    // Remove tar file
-                    sh "rm ${dockerFile}"
-                    
-                    // Download kubectl
-                    def kubectlUrl = 'https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl'
-                    def kubectlFile = '/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl'
-                    sh """
-                    curl -LO ${kubectlUrl} || { echo 'Failed to download kubectl'; exit 1; }
-                    mv kubectl ${kubectlFile} || { echo 'Failed to move kubectl'; exit 1; }
-                    chmod +x ${kubectlFile} || { echo 'Failed to make kubectl executable'; exit 1; }
-                    """
+                    // Download and install kubectl
+                    sh '''
+                    curl -LO https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl
+                    chmod +x ./kubectl
+                    mv ./kubectl /usr/local/bin/kubectl
+                    '''
                 }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                // Add your Docker image build steps here
-                echo 'Building Docker image...'
+                script {
+                    // Build Docker image
+                    sh '''
+                    /var/jenkins_home/workspace/BankLeumiApp/docker/docker build -t my-image:latest .
+                    '''
+                }
             }
         }
 
         stage('Start Minikube') {
             steps {
-                // Add your Minikube start steps here
-                echo 'Starting Minikube...'
+                script {
+                    // Start Minikube
+                    sh '''
+                    minikube start --driver=docker
+                    '''
+                }
             }
         }
 
         stage('Deploy to Minikube') {
             steps {
-                // Add your deployment steps here
-                echo 'Deploying to Minikube...'
+                script {
+                    // Deploy application to Minikube
+                    sh '''
+                    kubectl apply -f kubernetes/deployment.yaml
+                    kubectl apply -f kubernetes/service.yaml
+                    '''
+                }
             }
         }
 
         stage('Expose Service') {
             steps {
-                // Add your service expose steps here
-                echo 'Exposing service...'
-            }
-        }
-
-        stage('Declarative: Post Actions') {
-            steps {
-                cleanWs()
+                script {
+                    // Expose the service
+                    sh '''
+                    kubectl expose deployment my-deployment --type=LoadBalancer --name=my-service
+                    '''
+                }
             }
         }
     }
 
     post {
         always {
-            // Actions to run after the pipeline completes, regardless of success or failure
             echo 'Pipeline completed.'
-        }
-        success {
-            echo 'Pipeline succeeded!'
         }
         failure {
             echo 'Pipeline failed.'
