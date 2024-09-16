@@ -7,81 +7,61 @@ pipeline {
                 checkout scm
             }
         }
-
+        
         stage('Setup') {
             steps {
                 script {
-                    sh '''
-                    # Create necessary directories
-                    mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker
-                    mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl
-
-                    # Download Docker
-                    curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o docker.tgz
-                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1
-                    rm docker.tgz
-
-                    # Download kubectl
-                    curl -L -o /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl
-                    chmod +x /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl
-                    '''
+                    // Create necessary directories
+                    sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker'
+                    sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl'
+                    
+                    // Download Docker
+                    def dockerUrl = 'https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz'
+                    def dockerFile = '/var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz'
+                    sh "curl -L ${dockerUrl} -o ${dockerFile} || { echo 'Failed to download Docker'; exit 1; }"
+                    
+                    // Extract Docker
+                    sh "tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 -f ${dockerFile} || { echo 'Failed to extract Docker'; exit 1; }"
+                    
+                    // Remove tar file
+                    sh "rm ${dockerFile}"
+                    
+                    // Download kubectl
+                    def kubectlUrl = 'https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl'
+                    def kubectlFile = '/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl'
+                    sh "curl -LO ${kubectlUrl} -o ${kubectlFile} || { echo 'Failed to download kubectl'; exit 1; }"
+                    
+                    // Make kubectl executable
+                    sh "chmod +x ${kubectlFile} || { echo 'Failed to make kubectl executable'; exit 1; }"
                 }
             }
         }
-
+        
         stage('Build Docker Image') {
-            when {
-                expression { return fileExists('/var/jenkins_home/workspace/BankLeumiApp/docker/docker') }
-            }
             steps {
-                script {
-                    sh '''
-                    # Build Docker image (assuming Dockerfile is in workspace)
-                    /var/jenkins_home/workspace/BankLeumiApp/docker/docker build -t my-image:latest .
-                    '''
-                }
+                // Add your Docker image build steps here
+                echo 'Building Docker image...'
             }
         }
 
         stage('Start Minikube') {
-            when {
-                expression { return fileExists('/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl') }
-            }
             steps {
-                script {
-                    sh '''
-                    # Start Minikube
-                    /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl start --driver=docker
-                    '''
-                }
+                // Add your Minikube start steps here
+                echo 'Starting Minikube...'
             }
         }
 
         stage('Deploy to Minikube') {
-            when {
-                expression { return fileExists('/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl') }
-            }
             steps {
-                script {
-                    sh '''
-                    # Deploy application to Minikube
-                    /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl apply -f deployment.yaml
-                    '''
-                }
+                // Add your deployment steps here
+                echo 'Deploying to Minikube...'
             }
         }
 
         stage('Expose Service') {
-            when {
-                expression { return fileExists('/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl') }
-            }
             steps {
-                script {
-                    sh '''
-                    # Expose service
-                    /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl expose deployment my-deployment --type=LoadBalancer --name=my-service
-                    '''
-                }
+                // Add your service expose steps here
+                echo 'Exposing service...'
             }
         }
 
@@ -89,6 +69,19 @@ pipeline {
             steps {
                 cleanWs()
             }
+        }
+    }
+    
+    post {
+        always {
+            // Actions to run after the pipeline completes, regardless of success or failure
+            echo 'Pipeline completed.'
+        }
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed.'
         }
     }
 }
