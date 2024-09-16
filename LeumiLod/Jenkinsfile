@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        MINIKUBE_VERSION = 'v1.29.0'  // Set your desired Minikube version
-        KUBECTL_VERSION = 'v1.26.0'   // Set your desired kubectl version
-        DOCKER_VERSION = '20.10.24'   // Set your desired Docker version
+        MINIKUBE_VERSION = 'v1.29.0'
+        KUBECTL_VERSION = 'v1.26.0'
+        DOCKER_VERSION = '20.10.24'
         PATH = "$HOME/.local/bin:$PATH"
     }
 
@@ -29,11 +29,11 @@ pipeline {
                         mv kubectl $HOME/.local/bin/kubectl
                         chmod +x $HOME/.local/bin/kubectl
 
-                        # Install Docker in user space (requires Docker's `docker` binary to be available)
+                        # Install Docker in user space
                         curl -LO https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz
                         tar xzvf docker-${DOCKER_VERSION}.tgz
                         mv docker/* $HOME/.local/bin/
-                        
+
                         # Verify installations
                         minikube version
                         kubectl version --client
@@ -46,6 +46,12 @@ pipeline {
             steps {
                 script {
                     sh '''
+                        # Verify Dockerfile presence
+                        if [ ! -f Dockerfile ]; then
+                            echo "Dockerfile not found in $(pwd)"
+                            exit 1
+                        fi
+
                         # Build Docker image
                         docker build -t my-app:latest .
                     '''
@@ -59,8 +65,13 @@ pipeline {
                         # Start Minikube
                         minikube start --driver=docker
 
-                        # Deploy the Docker image to Minikube
-                        kubectl apply -f k8s/deployment.yaml
+                        # Apply Kubernetes manifests (ensure this file exists)
+                        if [ -f k8s/deployment.yaml ]; then
+                            kubectl apply -f k8s/deployment.yaml
+                        else
+                            echo "Kubernetes deployment file not found!"
+                            exit 1
+                        fi
                     '''
                 }
             }
