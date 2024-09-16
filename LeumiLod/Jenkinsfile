@@ -2,8 +2,10 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE_NAME = 'simple-flask-app'
-        DOCKER_IMAGE_TAG = 'latest'
+        MINIKUBE_VERSION = 'v1.29.0'  // Set your desired Minikube version
+        KUBECTL_VERSION = 'v1.26.0'   // Set your desired kubectl version
+        DOCKER_VERSION = '20.10.24'   // Set your desired Docker version
+        PATH = "$HOME/.local/bin:$PATH"
     }
 
     stages {
@@ -12,83 +14,52 @@ pipeline {
                 checkout scm
             }
         }
-
         stage('Install Dependencies') {
             steps {
                 script {
                     sh '''
-                        # Update package list and install dependencies with sudo
-                        sudo apt-get update -qq
-                        sudo apt-get install -y curl apt-transport-https gnupg
+                        # Install Minikube in user space
+                        curl -LO https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64
+                        mkdir -p $HOME/.local/bin
+                        mv minikube-linux-amd64 $HOME/.local/bin/minikube
+                        chmod +x $HOME/.local/bin/minikube
 
-                        # Add Docker's official GPG key
-                        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                        # Install kubectl in user space
+                        curl -LO https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl
+                        mv kubectl $HOME/.local/bin/kubectl
+                        chmod +x $HOME/.local/bin/kubectl
 
-                        # Set up the stable repository
-                        echo "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-                        # Update package list again
-                        sudo apt-get update -qq
-
-                        # Install Docker
-                        sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-
-                        # Start Docker service
-                        sudo systemctl start docker || true
-
-                        # Verify Docker installation
-                        docker --version || echo "Docker installation failed"
-
-                        # Install kubectl
-                        if ! command -v kubectl &> /dev/null; then
-                            echo "kubectl not found, installing..."
-                            curl -LO "https://dl.k8s.io/release/v1.22.0/bin/linux/amd64/kubectl"
-                            chmod +x ./kubectl
-                            sudo mv ./kubectl /usr/local/bin/kubectl
-                        else
-                            echo "kubectl is already installed."
-                        fi
-
-                        # Install Minikube
-                        if ! command -v minikube &> /dev/null; then
-                            echo "Minikube not found, installing..."
-                            curl -LO "https://storage.googleapis.com/minikube/releases/v1.23.2/minikube-linux-amd64"
-                            chmod +x minikube-linux-amd64
-                            sudo mv minikube-linux-amd64 /usr/local/bin/minikube
-                        else
-                            echo "Minikube is already installed."
-                        fi
-
+                        # Install Docker in user space (requires Docker's `docker` binary to be available)
+                        curl -LO https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz
+                        tar xzvf docker-${DOCKER_VERSION}.tgz
+                        mv docker/* $HOME/.local/bin/
+                        
                         # Verify installations
-                        kubectl version --client || echo "kubectl installation failed"
-                        minikube version || echo "Minikube installation failed"
+                        minikube version
+                        kubectl version --client
+                        docker --version
                     '''
                 }
             }
         }
-
         stage('Build Docker Image') {
             steps {
                 script {
                     sh '''
                         # Build Docker image
-                        docker build -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .
-
-                        # Verify Docker image build
-                        docker images | grep ${DOCKER_IMAGE_NAME}
+                        docker build -t my-app:latest .
                     '''
                 }
             }
         }
-
         stage('Deploy to Minikube') {
             steps {
                 script {
                     sh '''
                         # Start Minikube
-                        minikube start
+                        minikube start --driver=docker
 
-                        # Deploy to Minikube
+                        # Deploy the Docker image to Minikube
                         kubectl apply -f k8s/deployment.yaml
                     '''
                 }
