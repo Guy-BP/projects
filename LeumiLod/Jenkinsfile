@@ -1,56 +1,47 @@
 pipeline {
     agent any
+    
     environment {
-        APP_DIR = 'LeumiLod'
+        DOCKER_IMAGE = 'flask-app:latest'
+        KUBE_CONTEXT = 'minikube'
     }
+    
     stages {
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Build the Docker image for the Flask app
-                    sh '''
-                    cd ${APP_DIR}
-                    docker build -t flask-app:latest .
-                    '''
+                    sh 'cd LeumiLod && docker build -t ${DOCKER_IMAGE} .'
                 }
             }
         }
-        stage('Minikube Setup') {
+        
+        stage('Setup Minikube') {
             steps {
                 script {
-                    // Ensure Minikube is running
-                    sh '''
-                    minikube start --driver=docker
-                    '''
+                    sh 'minikube start --driver=docker'
                 }
             }
         }
+        
         stage('Deploy to Minikube') {
             steps {
                 script {
-                    // Deploy Flask app in Minikube and expose on port 443
                     sh '''
-                    # Create a self-signed certificate
-                    openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/flask.key -out /etc/ssl/certs/flask.crt -subj "/CN=localhost"
-
-                    # Create the deployment
-                    kubectl create deployment flask-app --image=flask-app:latest --dry-run=client -o yaml > deployment.yaml
-                    kubectl apply -f deployment.yaml
-
-                    # Create a service with NodePort exposing the app on port 443
-                    kubectl expose deployment flask-app --type=NodePort --port=443 --target-port=5000 --name=flask-service
+                    kubectl create deployment flask-app --image=${DOCKER_IMAGE}
+                    kubectl expose deployment flask-app --type=LoadBalancer --port=443 --target-port=5000
                     '''
                 }
             }
         }
-        stage('Expose Service on localhost:443') {
+        
+        stage('Access Application') {
             steps {
                 script {
-                    // Create Minikube tunnel to map service to localhost:443
                     sh '''
                     minikube tunnel &
+                    sleep 10
+                    kubectl get services
                     '''
-                    echo "Flask app should now be available at https://localhost:443"
                 }
             }
         }
