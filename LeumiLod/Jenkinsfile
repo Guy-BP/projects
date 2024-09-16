@@ -1,113 +1,46 @@
 pipeline {
     agent any
 
-    environment {
-        DOCKER_BIN = "${env.WORKSPACE}/docker"
-        MINIKUBE_BIN = "${env.WORKSPACE}/minikube"
-        KUBECTL_BIN = "${env.WORKSPACE}/kubectl"
-    }
-
     stages {
+        stage('Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Setup Docker and Minikube') {
             steps {
                 script {
-                    // Install Docker in user space
+                    // Check if Docker is installed and running
+                    def dockerInstalled = sh(script: 'command -v docker', returnStatus: true)
+                    if (dockerInstalled != 0) {
+                        echo 'Docker not found. Installing Docker...'
+                        sh '''
+                        curl -LO https://download.docker.com/linux/static/stable/x86_64/docker-20.10.24.tgz
+                        mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker
+                        tar xzvf docker-20.10.24.tgz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1
+                        export PATH=/var/jenkins_home/workspace/BankLeumiApp/docker:$PATH
+                        '''
+                    }
+
+                    // Start Docker daemon if not already running
                     sh '''
-                        if [ ! -x "$(command -v docker)" ]; then
-                            echo "Docker not found. Installing Docker..."
-
-                            # Download and extract Docker
-                            curl -LO https://download.docker.com/linux/static/stable/x86_64/docker-20.10.24.tgz
-                            mkdir -p ${DOCKER_BIN}
-                            tar xzvf docker-20.10.24.tgz -C ${DOCKER_BIN} --strip-components=1
-                            export PATH=${DOCKER_BIN}:$PATH
-                        fi
-
-                        docker --version
-                        docker run hello-world
+                    if ! pgrep -x "dockerd" > /dev/null; then
+                        nohup /var/jenkins_home/workspace/BankLeumiApp/docker/dockerd > /var/log/docker.log 2>&1 &
+                        sleep 10
+                    fi
                     '''
 
-                    // Install Minikube in user space
-                    sh '''
-                        if [ ! -x "$(command -v minikube)" ]; then
-                            echo "Minikube not found. Installing Minikube..."
-
-                            # Download and install Minikube
-                            curl -LO https://storage.googleapis.com/minikube/releases/v1.29.0/minikube-linux-amd64
-                            mkdir -p ${MINIKUBE_BIN}
-                            mv minikube-linux-amd64 ${MINIKUBE_BIN}/minikube
-                            chmod +x ${MINIKUBE_BIN}/minikube
-                            export PATH=${MINIKUBE_BIN}:$PATH
-                        fi
-
-                        minikube version
-                    '''
-
-                    // Install kubectl in user space
-                    sh '''
-                        if [ ! -x "$(command -v kubectl)" ]; then
-                            echo "kubectl not found. Installing kubectl..."
-
-                            # Download and install kubectl
-                            curl -LO https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl
-                            mkdir -p ${KUBECTL_BIN}
-                            mv kubectl ${KUBECTL_BIN}/kubectl
-                            chmod +x ${KUBECTL_BIN}/kubectl
-                            export PATH=${KUBECTL_BIN}:$PATH
-                        fi
-
-                        kubectl version --client
-                    '''
+                    // Start Minikube if not running
+                    sh 'minikube start || echo "Minikube already running"'
                 }
-            }
-        }
-
-        stage('Check Docker Daemon') {
-            steps {
-                script {
-                    sh '''
-                        if ! docker info > /dev/null 2>&1; then
-                            echo "Docker daemon is not running. Please start Docker manually."
-                            exit 1
-                        else
-                            echo "Docker daemon is running."
-                        fi
-                    '''
-                }
-            }
-        }
-
-        stage('Validate Docker Installation') {
-            steps {
-                script {
-                    sh '''
-                        docker --version
-                        docker run hello-world
-                    '''
-                }
-            }
-        }
-
-        stage('Checkout SCM') {
-            steps {
-                checkout([$class: 'GitSCM',
-                          branches: [[name: '*/main']],
-                          userRemoteConfigs: [[url: 'https://github.com/Guy-BP/projects']]
-                ])
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh '''
-                        cd LeumiLod
-                        if [ ! -f Dockerfile ]; then
-                            echo "Dockerfile not found. Exiting."
-                            exit 1
-                        fi
-                        docker build -t my-app:latest .
-                    '''
+                    sh 'docker build -t my-image:latest .'
                 }
             }
         }
@@ -115,13 +48,17 @@ pipeline {
         stage('Deploy to Minikube') {
             steps {
                 script {
+                    // Use Minikube's Docker daemon to avoid pushing to an external registry
+                    sh 'eval $(minikube docker-env)'
+
+                    // Deploy using kubectl without external YAML
                     sh '''
-                        if ! minikube status | grep -q "host: Running"; then
-                            echo "Minikube is not running. Please start Minikube manually."
-                            exit 1
-                        fi
-                        kubectl apply -f deployment.yaml
+                    kubectl run my-app --image=my-image:latest --port=443
+                    kubectl expose pod my-app --type=ClusterIP --port=443 --target-port=443
                     '''
+
+                    // Forward the port from Minikube to localhost
+                    sh 'kubectl port-forward pod/my-app 443:443 &'
                 }
             }
         }
