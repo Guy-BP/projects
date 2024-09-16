@@ -20,9 +20,9 @@ pipeline {
                     mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl
 
                     # Download Docker and extract
-                    curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o docker.tgz
-                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 -f docker.tgz
-                    rm docker.tgz
+                    curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
+                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 -f /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
+                    rm /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
 
                     # Download kubectl and install
                     curl -LO https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl
