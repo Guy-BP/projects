@@ -13,28 +13,26 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Install Docker
+                    // Install Docker (assuming Docker is not pre-installed)
                     sh '''
+                        # Install dependencies
                         curl -fsSL https://get.docker.com -o get-docker.sh
                         sh get-docker.sh
-                        sudo usermod -aG docker $USER
-                        sudo systemctl start docker
-                        sudo systemctl enable docker
                     '''
 
                     // Install kubectl
                     sh '''
                         curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
                         chmod +x ./kubectl
-                        sudo mv ./kubectl /usr/local/bin/kubectl
+                        mv ./kubectl /usr/local/bin/kubectl
                     '''
 
                     // Install Minikube
                     sh '''
                         curl -LO "https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64"
                         chmod +x minikube-linux-amd64
-                        sudo mv minikube-linux-amd64 /usr/local/bin/minikube
-                        sudo minikube start --driver=docker
+                        mv minikube-linux-amd64 /usr/local/bin/minikube
+                        minikube start --driver=none
                     '''
                 }
             }
