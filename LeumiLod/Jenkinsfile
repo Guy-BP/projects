@@ -11,7 +11,7 @@ pipeline {
         stage('Setup Docker and Minikube') {
             steps {
                 script {
-                    // Check if Docker is installed and running
+                    // Check if Docker is installed
                     def dockerInstalled = sh(script: 'command -v docker', returnStatus: true)
                     if (dockerInstalled != 0) {
                         echo 'Docker not found. Installing Docker...'
@@ -23,16 +23,18 @@ pipeline {
                         '''
                     }
 
-                    // Start Docker daemon if not already running
+                    // Start Docker daemon
                     sh '''
                     if ! pgrep -x "dockerd" > /dev/null; then
+                        echo "Starting Docker daemon..."
                         nohup /var/jenkins_home/workspace/BankLeumiApp/docker/dockerd > /var/log/docker.log 2>&1 &
                         sleep 10
                     fi
                     '''
 
-                    // Start Minikube if not running
-                    sh 'minikube start || echo "Minikube already running"'
+                    // Verify Docker installation and daemon status
+                    sh 'docker --version'
+                    sh 'docker run hello-world'
                 }
             }
         }
@@ -40,7 +42,19 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
+                    // Build Docker image
                     sh 'docker build -t my-image:latest .'
+                }
+            }
+        }
+
+        stage('Push Docker Image to Registry') {
+            steps {
+                script {
+                    // Push Docker image to a container registry (e.g., Docker Hub)
+                    // Update with your Docker Hub repository
+                    sh 'docker tag my-image:latest myusername/my-image:latest'
+                    sh 'docker push myusername/my-image:latest'
                 }
             }
         }
@@ -48,17 +62,37 @@ pipeline {
         stage('Deploy to Minikube') {
             steps {
                 script {
-                    // Use Minikube's Docker daemon to avoid pushing to an external registry
+                    // Start Minikube
+                    sh 'minikube start'
+
+                    // Use Minikube's Docker daemon
                     sh 'eval $(minikube docker-env)'
 
-                    // Deploy using kubectl without external YAML
+                    // Deploy to Minikube with inline kubectl commands (no external YAML files)
                     sh '''
-                    kubectl run my-app --image=my-image:latest --port=443
-                    kubectl expose pod my-app --type=ClusterIP --port=443 --target-port=443
-                    '''
+                    kubectl create deployment my-deployment --image=myusername/my-image:latest || kubectl set image deployment/my-deployment my-deployment=myusername/my-image:latest
 
-                    // Forward the port from Minikube to localhost
-                    sh 'kubectl port-forward pod/my-app 443:443 &'
+                    # Expose the deployment on port 443 using NodePort, but map it to localhost
+                    kubectl expose deployment my-deployment --type=NodePort --port=443 --target-port=443
+
+                    # Patch the service to force it to use a specific NodePort (e.g., 30443)
+                    kubectl patch service my-deployment -p '{"spec":{"ports":[{"port":443,"protocol":"TCP","targetPort":443,"nodePort":30443}]}}'
+                    '''
+                }
+            }
+        }
+
+        stage('Access Application Locally') {
+            steps {
+                script {
+                    // Retrieve the Minikube IP and ensure the service is accessible on localhost:443
+                    sh '''
+                    export MINIKUBE_IP=$(minikube ip)
+                    echo "You can access the application on https://localhost:443"
+                    
+                    # Forward port 443 from the NodePort to localhost:443
+                    nohup kubectl port-forward svc/my-deployment 443:30443 > /dev/null 2>&1 &
+                    '''
                 }
             }
         }
