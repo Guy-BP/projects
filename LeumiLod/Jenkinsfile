@@ -2,51 +2,67 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_BIN = '/var/jenkins_home/.local/bin/docker'
-        MINIKUBE_BIN = '/var/jenkins_home/.local/bin/minikube'
-        KUBECTL_BIN = '/var/jenkins_home/.local/bin/kubectl'
+        DOCKER_BIN = "${env.WORKSPACE}/docker"
+        MINIKUBE_BIN = "${env.WORKSPACE}/minikube"
+        KUBECTL_BIN = "${env.WORKSPACE}/kubectl"
     }
 
     stages {
         stage('Setup Docker and Minikube') {
             steps {
                 script {
-                    // Ensure Docker is installed and running
+                    // Install Docker in user space
                     sh '''
-                        if ! command -v docker > /dev/null; then
+                        if [ ! -x "$(command -v docker)" ]; then
                             echo "Docker not found. Installing Docker..."
-                            curl -LO https://download.docker.com/linux/static/stable/x86_64/docker-20.10.24.tgz
-                            tar xzvf docker-20.10.24.tgz
-                            mv docker/* /var/jenkins_home/.local/bin/
-                        fi
 
-                        if ! docker info > /dev/null 2>&1; then
-                            echo "Docker is not running. Starting Docker..."
-                            sudo systemctl start docker
+                            # Download and extract Docker
+                            curl -LO https://download.docker.com/linux/static/stable/x86_64/docker-20.10.24.tgz
+                            mkdir -p ${DOCKER_BIN}
+                            tar xzvf docker-20.10.24.tgz -C ${DOCKER_BIN}
+                            mv ${DOCKER_BIN}/docker/* ${DOCKER_BIN}/
+
+                            # Update PATH for Docker
+                            export PATH=${DOCKER_BIN}:$PATH
                         fi
 
                         docker --version
                         docker run hello-world
                     '''
-                    
-                    // Ensure Minikube and kubectl are installed
-                    sh '''
-                        if ! command -v minikube > /dev/null; then
-                            echo "Minikube not found. Installing Minikube..."
-                            curl -LO https://storage.googleapis.com/minikube/releases/v1.29.0/minikube-linux-amd64
-                            mkdir -p /var/jenkins_home/.local/bin
-                            mv minikube-linux-amd64 /var/jenkins_home/.local/bin/minikube
-                            chmod +x /var/jenkins_home/.local/bin/minikube
-                        fi
 
-                        if ! command -v kubectl > /dev/null; then
-                            echo "kubectl not found. Installing kubectl..."
-                            curl -LO https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl
-                            mv kubectl /var/jenkins_home/.local/bin/kubectl
-                            chmod +x /var/jenkins_home/.local/bin/kubectl
+                    // Install Minikube in user space
+                    sh '''
+                        if [ ! -x "$(command -v minikube)" ]; then
+                            echo "Minikube not found. Installing Minikube..."
+
+                            # Download and install Minikube
+                            curl -LO https://storage.googleapis.com/minikube/releases/v1.29.0/minikube-linux-amd64
+                            mkdir -p ${MINIKUBE_BIN}
+                            mv minikube-linux-amd64 ${MINIKUBE_BIN}/minikube
+                            chmod +x ${MINIKUBE_BIN}/minikube
+
+                            # Update PATH for Minikube
+                            export PATH=${MINIKUBE_BIN}:$PATH
                         fi
 
                         minikube version
+                    '''
+
+                    // Install kubectl in user space
+                    sh '''
+                        if [ ! -x "$(command -v kubectl)" ]; then
+                            echo "kubectl not found. Installing kubectl..."
+
+                            # Download and install kubectl
+                            curl -LO https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl
+                            mkdir -p ${KUBECTL_BIN}
+                            mv kubectl ${KUBECTL_BIN}/kubectl
+                            chmod +x ${KUBECTL_BIN}/kubectl
+
+                            # Update PATH for kubectl
+                            export PATH=${KUBECTL_BIN}:$PATH
+                        fi
+
                         kubectl version --client
                     '''
                 }
@@ -57,9 +73,9 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        if ! pgrep -x "dockerd" > /dev/null; then
-                            echo "Docker daemon not running. Starting Docker..."
-                            sudo systemctl start docker
+                        if ! docker info > /dev/null 2>&1; then
+                            echo "Docker daemon is not running. Please start Docker manually."
+                            exit 1
                         else
                             echo "Docker daemon is running."
                         fi
@@ -108,8 +124,8 @@ pipeline {
                 script {
                     sh '''
                         if ! minikube status | grep -q "host: Running"; then
-                            echo "Minikube is not running. Starting Minikube..."
-                            minikube start
+                            echo "Minikube is not running. Please start Minikube manually."
+                            exit 1
                         fi
                         kubectl apply -f deployment.yaml
                     '''
