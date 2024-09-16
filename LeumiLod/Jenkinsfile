@@ -4,34 +4,30 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                script {
-                    checkout([$class: 'GitSCM', 
-                        branches: [[name: '*/main']], 
-                        userRemoteConfigs: [[url: 'https://github.com/Guy-BP/projects']]
-                    ])
-                }
+                checkout([$class: 'GitSCM', 
+                    branches: [[name: '*/main']], 
+                    userRemoteConfigs: [[url: 'https://github.com/Guy-BP/projects']]
+                ])
             }
         }
 
         stage('Setup') {
             steps {
                 script {
-                    // Create necessary directories
-                    sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker'
-                    sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl'
-                    
-                    // Download and install Docker
+                    // Create necessary directories and download files
                     sh '''
-                    curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
-                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 -f /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
-                    rm /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
-                    '''
-                    
-                    // Download and install kubectl
-                    sh '''
+                    mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker
+                    mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl
+
+                    # Download Docker and extract
+                    curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o docker.tgz
+                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 -f docker.tgz
+                    rm docker.tgz
+
+                    # Download kubectl and install
                     curl -LO https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl
-                    chmod +x ./kubectl
-                    mv ./kubectl /usr/local/bin/kubectl
+                    chmod +x kubectl
+                    mv kubectl /usr/local/bin/
                     '''
                 }
             }
@@ -39,46 +35,34 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    // Build Docker image
-                    sh '''
-                    /var/jenkins_home/workspace/BankLeumiApp/docker/docker build -t my-image:latest .
-                    '''
-                }
+                sh '''
+                /var/jenkins_home/workspace/BankLeumiApp/docker/docker build -t my-image:latest .
+                '''
             }
         }
 
         stage('Start Minikube') {
             steps {
-                script {
-                    // Start Minikube
-                    sh '''
-                    minikube start --driver=docker
-                    '''
-                }
+                sh '''
+                minikube start --driver=docker
+                '''
             }
         }
 
         stage('Deploy to Minikube') {
             steps {
-                script {
-                    // Deploy application to Minikube
-                    sh '''
-                    kubectl apply -f kubernetes/deployment.yaml
-                    kubectl apply -f kubernetes/service.yaml
-                    '''
-                }
+                sh '''
+                kubectl apply -f kubernetes/deployment.yaml
+                kubectl apply -f kubernetes/service.yaml
+                '''
             }
         }
 
         stage('Expose Service') {
             steps {
-                script {
-                    // Expose the service
-                    sh '''
-                    kubectl expose deployment my-deployment --type=LoadBalancer --name=my-service
-                    '''
-                }
+                sh '''
+                kubectl expose deployment my-deployment --type=LoadBalancer --name=my-service
+                '''
             }
         }
     }
