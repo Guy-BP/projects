@@ -16,7 +16,7 @@ pipeline {
                     def dockerBin = "${HOME_DIR}/docker/docker"
                     def kubectlBin = "${HOME_DIR}/kubectl/kubectl"
                     def minikubeBin = "${HOME_DIR}/minikube/minikube"
-                    
+
                     // Install Docker
                     sh """
                         mkdir -p ${HOME_DIR}/docker
@@ -24,7 +24,7 @@ pipeline {
                         export PATH=${HOME_DIR}/docker:$PATH
                         ${dockerBin} --version
                     """
-                    
+
                     // Install kubectl
                     sh """
                         mkdir -p ${HOME_DIR}/kubectl
@@ -34,7 +34,7 @@ pipeline {
                         export PATH=${HOME_DIR}/kubectl:$PATH
                         ${kubectlBin} version --client
                     """
-                    
+
                     // Install Minikube
                     sh """
                         mkdir -p ${HOME_DIR}/minikube
@@ -47,7 +47,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Build Docker Image') {
             steps {
                 script {
@@ -59,7 +59,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Start Minikube') {
             steps {
                 script {
@@ -71,7 +71,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Deploy to Minikube') {
             steps {
                 script {
