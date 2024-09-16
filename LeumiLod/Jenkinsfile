@@ -18,7 +18,7 @@ pipeline {
         stage('Setup Minikube') {
             steps {
                 script {
-                    sh 'minikube start --driver=docker --force'
+                    sh 'minikube start --driver=none'
                 }
             }
         }
