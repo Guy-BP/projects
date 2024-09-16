@@ -1,78 +1,58 @@
 pipeline {
     agent any
-
+    environment {
+        APP_DIR = 'LeumiLod'
+    }
     stages {
-        stage('Checkout') {
-            steps {
-                checkout([$class: 'GitSCM', 
-                    branches: [[name: '*/main']], 
-                    userRemoteConfigs: [[url: 'https://github.com/Guy-BP/projects']]
-                ])
-            }
-        }
-
-        stage('Setup') {
+        stage('Build Docker Image') {
             steps {
                 script {
-                    // Create necessary directories and download files
+                    // Build the Docker image for the Flask app
                     sh '''
-                    mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker
-                    mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl
-
-                    # Download Docker and extract
-                    curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
-                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 -f /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
-                    rm /var/jenkins_home/workspace/BankLeumiApp/docker/docker.tgz
-
-                    # Download kubectl and install
-                    curl -LO https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl
-                    chmod +x kubectl
-                    mv kubectl /usr/local/bin/
+                    cd ${APP_DIR}
+                    docker build -t flask-app:latest .
                     '''
                 }
             }
         }
-
-        stage('Build Docker Image') {
+        stage('Minikube Setup') {
             steps {
-                sh '''
-                /var/jenkins_home/workspace/BankLeumiApp/docker/docker build -t my-image:latest .
-                '''
+                script {
+                    // Ensure Minikube is running
+                    sh '''
+                    minikube start --driver=docker
+                    '''
+                }
             }
         }
-
-        stage('Start Minikube') {
-            steps {
-                sh '''
-                minikube start --driver=docker
-                '''
-            }
-        }
-
         stage('Deploy to Minikube') {
             steps {
-                sh '''
-                kubectl apply -f kubernetes/deployment.yaml
-                kubectl apply -f kubernetes/service.yaml
-                '''
+                script {
+                    // Deploy Flask app in Minikube and expose on port 443
+                    sh '''
+                    # Create a self-signed certificate
+                    openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/flask.key -out /etc/ssl/certs/flask.crt -subj "/CN=localhost"
+
+                    # Create the deployment
+                    kubectl create deployment flask-app --image=flask-app:latest --dry-run=client -o yaml > deployment.yaml
+                    kubectl apply -f deployment.yaml
+
+                    # Create a service with NodePort exposing the app on port 443
+                    kubectl expose deployment flask-app --type=NodePort --port=443 --target-port=5000 --name=flask-service
+                    '''
+                }
             }
         }
-
-        stage('Expose Service') {
+        stage('Expose Service on localhost:443') {
             steps {
-                sh '''
-                kubectl expose deployment my-deployment --type=LoadBalancer --name=my-service
-                '''
+                script {
+                    // Create Minikube tunnel to map service to localhost:443
+                    sh '''
+                    minikube tunnel &
+                    '''
+                    echo "Flask app should now be available at https://localhost:443"
+                }
             }
-        }
-    }
-
-    post {
-        always {
-            echo 'Pipeline completed.'
-        }
-        failure {
-            echo 'Pipeline failed.'
         }
     }
 }
