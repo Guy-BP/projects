@@ -1,72 +1,100 @@
 pipeline {
     agent any
 
-    stages {
-        stage('Checkout SCM') {
-            steps {
-                checkout scm
-            }
-        }
+    environment {
+        DOCKER_CLI_VERSION = '20.10.12'
+        KUBECTL_VERSION = '1.27.0'
+        MINIKUBE_VERSION = '1.27.0'
+        HOME_DIR = "${env.WORKSPACE}"
+    }
 
-        stage('Setup Docker and Minikube') {
+    stages {
+        stage('Setup') {
             steps {
                 script {
-                    // Start Minikube if not already running
-                    sh 'minikube start || echo "Minikube already running"'
-
-                    // Use Minikube's Docker daemon
-                    sh 'eval $(minikube docker-env)'
-
-                    // Verify Docker installation
-                    sh 'docker --version'
-                    sh 'docker run hello-world'
+                    // Define paths
+                    def dockerBin = "${HOME_DIR}/docker/docker"
+                    def kubectlBin = "${HOME_DIR}/kubectl/kubectl"
+                    def minikubeBin = "${HOME_DIR}/minikube/minikube"
+                    
+                    // Install Docker
+                    sh """
+                        mkdir -p ${HOME_DIR}/docker
+                        curl -L https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz | tar xz -C ${HOME_DIR}/docker --strip-components=1
+                        export PATH=${HOME_DIR}/docker:$PATH
+                        ${dockerBin} --version
+                    """
+                    
+                    // Install kubectl
+                    sh """
+                        mkdir -p ${HOME_DIR}/kubectl
+                        curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+                        chmod +x kubectl
+                        mv kubectl ${HOME_DIR}/kubectl/
+                        export PATH=${HOME_DIR}/kubectl:$PATH
+                        ${kubectlBin} version --client
+                    """
+                    
+                    // Install Minikube
+                    sh """
+                        mkdir -p ${HOME_DIR}/minikube
+                        curl -LO "https://storage.googleapis.com/minikube/releases/v${MINIKUBE_VERSION}/minikube-linux-amd64"
+                        chmod +x minikube-linux-amd64
+                        mv minikube-linux-amd64 ${HOME_DIR}/minikube/minikube
+                        export PATH=${HOME_DIR}/minikube:$PATH
+                        ${minikubeBin} version
+                    """
                 }
             }
         }
-
+        
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Build Docker image using Minikube's Docker daemon
-                    sh 'docker build -t my-image:latest .'
+                    // Build Docker image
+                    sh """
+                        export PATH=${HOME_DIR}/docker:$PATH
+                        docker build -t flask-app .
+                    """
                 }
             }
         }
-
+        
+        stage('Start Minikube') {
+            steps {
+                script {
+                    // Start Minikube
+                    sh """
+                        export PATH=${HOME_DIR}/minikube:$PATH
+                        minikube start --driver=none
+                    """
+                }
+            }
+        }
+        
         stage('Deploy to Minikube') {
             steps {
                 script {
-                    // Deploy to Minikube with inline kubectl commands (no external YAML files)
-                    sh '''
-                    kubectl create deployment my-deployment --image=my-image:latest || kubectl set image deployment/my-deployment my-deployment=my-image:latest
-
-                    # Expose the deployment on port 443 using NodePort, but map it to localhost
-                    kubectl expose deployment my-deployment --type=NodePort --port=443 --target-port=443
-
-                    # Patch the service to force it to use a specific NodePort (e.g., 30443)
-                    kubectl patch service my-deployment -p '{"spec":{"ports":[{"port":443,"protocol":"TCP","targetPort":443,"nodePort":30443}]}}'
-                    '''
+                    // Deploy the Flask app
+                    sh """
+                        export PATH=${HOME_DIR}/kubectl:$PATH
+                        kubectl create deployment flask-app --image=flask-app
+                        kubectl expose deployment flask-app --type=NodePort --port=443
+                    """
                 }
             }
         }
 
-        stage('Access Application Locally') {
+        stage('Expose Service') {
             steps {
                 script {
-                    // Forward port 443 from the NodePort to localhost:443
-                    sh 'kubectl port-forward svc/my-deployment 443:30443 &'
-                    
-                    // Give port-forward some time to establish
-                    sleep 10
-                    echo 'You can access the application on https://localhost:443'
+                    // Get Minikube service URL and print it
+                    sh """
+                        export PATH=${HOME_DIR}/kubectl:$PATH
+                        minikube service flask-app --url
+                    """
                 }
             }
-        }
-    }
-
-    post {
-        always {
-            cleanWs()
         }
     }
 }
