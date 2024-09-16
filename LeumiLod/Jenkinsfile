@@ -4,7 +4,6 @@ pipeline {
     environment {
         DOCKER_IMAGE_NAME = 'simple-flask-app'
         DOCKER_IMAGE_TAG = 'latest'
-        KUBERNETES_NAMESPACE = 'default'
         MINIKUBE_VERSION = 'v1.30.0'
         KUBECTL_VERSION = 'v1.27.1'
     }
@@ -13,43 +12,51 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Install Docker (assuming Docker is not pre-installed)
+                    // Install Docker
                     sh '''
-                        # Install dependencies
-                        curl -fsSL https://get.docker.com -o get-docker.sh
-                        sh get-docker.sh
+                        if ! command -v docker &> /dev/null; then
+                            echo "Docker not found, installing..."
+                            curl -fsSL https://get.docker.com -o get-docker.sh
+                            sh get-docker.sh
+                        else
+                            echo "Docker is already installed."
+                        fi
                     '''
 
                     // Install kubectl
                     sh '''
-                        curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-                        chmod +x ./kubectl
-                        mv ./kubectl /usr/local/bin/kubectl
+                        if ! command -v kubectl &> /dev/null; then
+                            echo "kubectl not found, installing..."
+                            curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+                            chmod +x ./kubectl
+                            mv ./kubectl /usr/local/bin/kubectl
+                        else
+                            echo "kubectl is already installed."
+                        fi
                     '''
 
                     // Install Minikube
                     sh '''
-                        curl -LO "https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64"
-                        chmod +x minikube-linux-amd64
-                        mv minikube-linux-amd64 /usr/local/bin/minikube
-                        minikube start --driver=none
+                        if ! command -v minikube &> /dev/null; then
+                            echo "Minikube not found, installing..."
+                            curl -LO "https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64"
+                            chmod +x minikube-linux-amd64
+                            mv minikube-linux-amd64 /usr/local/bin/minikube
+                            minikube start --driver=none
+                        else
+                            echo "Minikube is already installed."
+                        fi
                     '''
                 }
-            }
-        }
-
-        stage('Checkout') {
-            steps {
-                checkout scm
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh """
+                    sh '''
                         docker build -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .
-                    """
+                    '''
                 }
             }
         }
@@ -57,34 +64,18 @@ pipeline {
         stage('Deploy to Minikube') {
             steps {
                 script {
-                    // Get kubeconfig from Minikube
+                    // Set up Kubeconfig from Minikube
                     def kubeconfig = sh(script: 'minikube kubeconfig', returnStdout: true).trim()
                     writeFile(file: 'kubeconfig', text: kubeconfig)
 
-                    // Set up Kubeconfig environment variable
+                    // Set KUBECONFIG environment variable
                     withEnv(["KUBECONFIG=${pwd()}/kubeconfig"]) {
-                        // Create a deployment
-                        sh """
-                            kubectl create deployment simple-flask-app \
-                            --image=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} \
-                            --dry-run=client -o yaml | kubectl apply -f -
-                        """
-                        
-                        // Expose the deployment as a service
-                        sh """
-                            kubectl expose deployment simple-flask-app \
-                            --type=LoadBalancer --port=443 --target-port=80 \
-                            --dry-run=client -o yaml | kubectl apply -f -
-                        """
+                        // Deploy the Docker image to Minikube
+                        sh '''
+                            kubectl create deployment simple-flask-app --image=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} --dry-run=client -o yaml | kubectl apply -f -
+                            kubectl expose deployment simple-flask-app --type=LoadBalancer --port=443 --target-port=80 --dry-run=client -o yaml | kubectl apply -f -
+                        '''
                     }
                 }
             }
         }
-    }
-
-    post {
-        always {
-            cleanWs()
-        }
-    }
-}
