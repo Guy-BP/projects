@@ -19,10 +19,7 @@ pipeline {
                             # Download and extract Docker
                             curl -LO https://download.docker.com/linux/static/stable/x86_64/docker-20.10.24.tgz
                             mkdir -p ${DOCKER_BIN}
-                            tar xzvf docker-20.10.24.tgz -C ${DOCKER_BIN}
-                            mv ${DOCKER_BIN}/docker/* ${DOCKER_BIN}/
-
-                            # Update PATH for Docker
+                            tar xzvf docker-20.10.24.tgz -C ${DOCKER_BIN} --strip-components=1
                             export PATH=${DOCKER_BIN}:$PATH
                         fi
 
@@ -40,8 +37,6 @@ pipeline {
                             mkdir -p ${MINIKUBE_BIN}
                             mv minikube-linux-amd64 ${MINIKUBE_BIN}/minikube
                             chmod +x ${MINIKUBE_BIN}/minikube
-
-                            # Update PATH for Minikube
                             export PATH=${MINIKUBE_BIN}:$PATH
                         fi
 
@@ -58,8 +53,6 @@ pipeline {
                             mkdir -p ${KUBECTL_BIN}
                             mv kubectl ${KUBECTL_BIN}/kubectl
                             chmod +x ${KUBECTL_BIN}/kubectl
-
-                            # Update PATH for kubectl
                             export PATH=${KUBECTL_BIN}:$PATH
                         fi
 
