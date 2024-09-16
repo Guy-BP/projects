@@ -2,44 +2,41 @@ pipeline {
     agent any
 
     stages {
+        stage('Declarative: Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Setup') {
             steps {
                 script {
-                    // Create necessary directories
-                    sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker'
-                    sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl'
-
-                    // Download Docker binary
                     sh '''
+                    # Create necessary directories
+                    mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker
+                    mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl
+
+                    # Download Docker
                     curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o docker.tgz
-                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 < docker.tgz
+                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1
                     rm docker.tgz
-                    '''
 
-                    // Download kubectl binary
-                    sh '''
-                    curl -LO https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl
-                    mv kubectl /var/jenkins_home/workspace/BankLeumiApp/kubectl/
+                    # Download kubectl
+                    curl -L -o /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl
                     chmod +x /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl
                     '''
-
-                    // Set PATH environment variable
-                    sh '''
-                    export PATH=/var/jenkins_home/workspace/BankLeumiApp/docker:/var/jenkins_home/workspace/BankLeumiApp/kubectl:$PATH
-                    '''
-
-                    // Verify installations
-                    sh '/var/jenkins_home/workspace/BankLeumiApp/docker/docker --version'
-                    sh '/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl version --client'
                 }
             }
         }
 
         stage('Build Docker Image') {
+            when {
+                expression { return fileExists('/var/jenkins_home/workspace/BankLeumiApp/docker/docker') }
+            }
             steps {
                 script {
-                    // Build Docker image
                     sh '''
+                    # Build Docker image (assuming Dockerfile is in workspace)
                     /var/jenkins_home/workspace/BankLeumiApp/docker/docker build -t my-image:latest .
                     '''
                 }
@@ -47,43 +44,51 @@ pipeline {
         }
 
         stage('Start Minikube') {
+            when {
+                expression { return fileExists('/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl') }
+            }
             steps {
                 script {
-                    // Start Minikube
                     sh '''
-                    minikube start --driver=none
+                    # Start Minikube
+                    /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl start --driver=docker
                     '''
                 }
             }
         }
 
         stage('Deploy to Minikube') {
+            when {
+                expression { return fileExists('/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl') }
+            }
             steps {
                 script {
-                    // Deploy application to Minikube
                     sh '''
-                    kubectl apply -f deployment.yaml
+                    # Deploy application to Minikube
+                    /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl apply -f deployment.yaml
                     '''
                 }
             }
         }
 
         stage('Expose Service') {
+            when {
+                expression { return fileExists('/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl') }
+            }
             steps {
                 script {
-                    // Expose service in Minikube
                     sh '''
-                    kubectl expose deployment my-deployment --type=NodePort --name=my-service
+                    # Expose service
+                    /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl expose deployment my-deployment --type=LoadBalancer --name=my-service
                     '''
                 }
             }
         }
-    }
 
-    post {
-        always {
-            // Clean up workspace
-            cleanWs()
+        stage('Declarative: Post Actions') {
+            steps {
+                cleanWs()
+            }
         }
     }
 }
