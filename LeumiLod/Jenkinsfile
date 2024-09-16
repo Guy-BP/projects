@@ -13,27 +13,24 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Install Docker
+                    // Install Docker (if not already installed)
                     sh '''
                         curl -fsSL https://get.docker.com -o get-docker.sh
                         sh get-docker.sh
-                        sudo usermod -aG docker $USER
-                        sudo systemctl start docker
                     '''
 
-                    // Install kubectl
+                    // Install kubectl (if not already installed)
                     sh '''
                         curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
                         chmod +x ./kubectl
-                        sudo mv ./kubectl /usr/local/bin/kubectl
+                        mv ./kubectl /usr/local/bin/kubectl
                     '''
 
-                    // Install Minikube
+                    // Install Minikube (if not already installed)
                     sh '''
                         curl -LO "https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64"
                         chmod +x minikube-linux-amd64
-                        sudo mv minikube-linux-amd64 /usr/local/bin/minikube
-                        sudo minikube start --driver=docker
+                        mv minikube-linux-amd64 /usr/local/bin/minikube
                     '''
                 }
             }
@@ -56,24 +53,32 @@ pipeline {
         stage('Deploy to Minikube') {
             steps {
                 script {
+                    // Start Minikube if not already running
+                    sh '''
+                        minikube start --driver=docker
+                    '''
+
                     def kubeconfig = sh(script: 'minikube kubeconfig', returnStdout: true).trim()
                     writeFile(file: 'kubeconfig', text: kubeconfig)
 
-                    withKubeConfig(credentialsId: 'minikube-kubeconfig') {
-                        // Create a deployment
-                        sh """
-                            kubectl create deployment simple-flask-app \
-                            --image=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} \
-                            --dry-run=client -o yaml | kubectl apply -f -
-                        """
-                        
-                        // Expose the deployment as a service
-                        sh """
-                            kubectl expose deployment simple-flask-app \
-                            --type=LoadBalancer --port=443 --target-port=80 \
-                            --dry-run=client -o yaml | kubectl apply -f -
-                        """
-                    }
+                    // Set kubectl to use Minikube's kubeconfig
+                    sh '''
+                        kubectl config use-context minikube
+                    '''
+
+                    // Create a deployment
+                    sh """
+                        kubectl create deployment simple-flask-app \
+                        --image=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} \
+                        --dry-run=client -o yaml | kubectl apply -f -
+                    """
+                    
+                    // Expose the deployment as a service
+                    sh """
+                        kubectl expose deployment simple-flask-app \
+                        --type=LoadBalancer --port=443 --target-port=80 \
+                        --dry-run=client -o yaml | kubectl apply -f -
+                    """
                 }
             }
         }
