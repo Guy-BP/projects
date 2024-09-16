@@ -1,16 +1,9 @@
 pipeline {
-    agent {
-        docker {
-            image 'ubuntu:20.04' // You can use any Docker image you prefer
-            args '-u root' // Run the container as root
-        }
-    }
+    agent any
 
     environment {
         DOCKER_IMAGE_NAME = 'simple-flask-app'
         DOCKER_IMAGE_TAG = 'latest'
-        MINIKUBE_VERSION = 'v1.30.0'
-        KUBECTL_VERSION = 'v1.27.1'
     }
 
     stages {
@@ -23,29 +16,36 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Install Docker, kubectl, and Minikube within the Docker container
+                    // Install necessary packages and Docker
                     sh '''
                         # Update package list
                         apt-get update -qq
 
                         # Install necessary packages
-                        apt-get install -y curl apt-transport-https
+                        apt-get install -y curl apt-transport-https gnupg
+
+                        # Add Docker's official GPG key
+                        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+
+                        # Set up the stable repository
+                        echo "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+                        # Update package list again
+                        apt-get update -qq
 
                         # Install Docker
-                        if ! command -v docker &> /dev/null; then
-                            echo "Docker not found, installing..."
-                            curl -fsSL https://get.docker.com -o get-docker.sh
-                            sh get-docker.sh
-                            # Ensure Docker service is started
-                            systemctl start docker || true
-                        else
-                            echo "Docker is already installed."
-                        fi
+                        apt-get install -y docker-ce docker-ce-cli containerd.io
+
+                        # Start Docker service
+                        systemctl start docker || true
+
+                        # Verify Docker installation
+                        docker --version || echo "Docker installation failed"
 
                         # Install kubectl
                         if ! command -v kubectl &> /dev/null; then
                             echo "kubectl not found, installing..."
-                            curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+                            curl -LO "https://dl.k8s.io/release/v1.22.0/bin/linux/amd64/kubectl"
                             chmod +x ./kubectl
                             mv ./kubectl /usr/local/bin/kubectl
                         else
@@ -55,20 +55,16 @@ pipeline {
                         # Install Minikube
                         if ! command -v minikube &> /dev/null; then
                             echo "Minikube not found, installing..."
-                            curl -LO "https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64"
+                            curl -LO "https://storage.googleapis.com/minikube/releases/v1.23.2/minikube-linux-amd64"
                             chmod +x minikube-linux-amd64
                             mv minikube-linux-amd64 /usr/local/bin/minikube
                         else
                             echo "Minikube is already installed."
                         fi
 
-                        # Start Minikube
-                        if ! minikube status | grep -q "Running"; then
-                            echo "Starting Minikube..."
-                            minikube start --driver=none
-                        else
-                            echo "Minikube is already running."
-                        fi
+                        # Verify installations
+                        kubectl version --client || echo "kubectl installation failed"
+                        minikube version || echo "Minikube installation failed"
                     '''
                 }
             }
@@ -78,7 +74,11 @@ pipeline {
             steps {
                 script {
                     sh '''
+                        # Build Docker image
                         docker build -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .
+
+                        # Verify Docker image build
+                        docker images | grep ${DOCKER_IMAGE_NAME}
                     '''
                 }
             }
@@ -87,18 +87,13 @@ pipeline {
         stage('Deploy to Minikube') {
             steps {
                 script {
-                    // Set up Kubeconfig from Minikube
-                    def kubeconfig = sh(script: 'minikube kubeconfig', returnStdout: true).trim()
-                    writeFile(file: 'kubeconfig', text: kubeconfig)
+                    sh '''
+                        # Start Minikube
+                        minikube start
 
-                    // Set KUBECONFIG environment variable
-                    withEnv(["KUBECONFIG=${pwd()}/kubeconfig"]) {
-                        // Deploy the Docker image to Minikube
-                        sh '''
-                            kubectl create deployment simple-flask-app --image=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} --dry-run=client -o yaml | kubectl apply -f -
-                            kubectl expose deployment simple-flask-app --type=LoadBalancer --port=443 --target-port=80 --dry-run=client -o yaml | kubectl apply -f -
-                        '''
-                    }
+                        # Deploy to Minikube
+                        kubectl apply -f k8s/deployment.yaml
+                    '''
                 }
             }
         }
