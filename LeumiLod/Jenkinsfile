@@ -1,69 +1,52 @@
 pipeline {
     agent any
-    
-    environment {
-        DOCKER_IMAGE = "myapp:latest"
-        DOCKER_REGISTRY = "myregistry.com"
-        K8S_NAMESPACE = "default"
-        DEPLOY_SERVER = "user@deploy-server"
-    }
 
     stages {
-        stage('Install Docker') {
+        stage('Checkout SCM') {
             steps {
-                script {
-                    // Install Docker on the build server
-                    sh '''
-                    apt-get update
-                    apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-                    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-                    apt-get update
-                    apt-get install -y docker-ce
-                    systemctl start docker
-                    systemctl enable docker
-                    '''
-                }
+                checkout scm
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Sample Dockerfile for a simple Python app
-                    writeFile file: 'Dockerfile', text: '''
-                    FROM python:3.9-slim
-                    WORKDIR /app
-                    COPY . .
-                    RUN echo "from http.server import SimpleHTTPRequestHandler as Handler, HTTPServer as Server\nServer(('', 8080), Handler).serve_forever()" > app.py
-                    CMD ["python", "app.py"]
-                    '''
                     // Build Docker image
-                    sh 'docker build -t $DOCKER_IMAGE .'
+                    sh '''
+                    if command -v docker &> /dev/null
+                    then
+                        echo "Building Docker image..."
+                        docker build -t my-docker-image .
+                    else
+                        echo "Docker is not installed. Please install Docker."
+                        exit 1
+                    fi
+                    '''
                 }
             }
         }
 
-        stage('Install Minikube & kubectl on Deploy Server') {
+        stage('Install Minikube & kubectl') {
             steps {
                 script {
-                    // Install Minikube and kubectl on the deployment server via SSH
-                    sh """
-                    ssh $DEPLOY_SERVER << EOF
-                    # Install kubectl
-                    curl -LO "https://storage.googleapis.com/kubernetes-release/release/\$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
-                    chmod +x kubectl
-                    mv kubectl /usr/local/bin/
+                    // Install Minikube and kubectl if not installed
+                    sh '''
+                    if command -v minikube &> /dev/null
+                    then
+                        echo "Minikube is already installed."
+                    else
+                        echo "Minikube is not installed. Please install Minikube."
+                        exit 1
+                    fi
 
-                    # Install Minikube
-                    curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-                    chmod +x minikube
-                    install minikube /usr/local/bin/
-                    
-                    # Start Minikube
-                    minikube start --driver=none
-                    EOF
-                    """
+                    if command -v kubectl &> /dev/null
+                    then
+                        echo "kubectl is already installed."
+                    else
+                        echo "kubectl is not installed. Please install kubectl."
+                        exit 1
+                    fi
+                    '''
                 }
             }
         }
@@ -71,13 +54,18 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    // Deploy Docker image as Kubernetes pod on the deploy server using Minikube
-                    sh """
-                    ssh $DEPLOY_SERVER << EOF
-                    kubectl create deployment myapp --image=$DOCKER_IMAGE --namespace=$K8S_NAMESPACE || kubectl set image deployment/myapp myapp=$DOCKER_IMAGE --namespace=$K8S_NAMESPACE
-                    kubectl expose deployment myapp --type=NodePort --port=443 --target-port=8080 --name=myapp-service --namespace=$K8S_NAMESPACE || true
-                    EOF
-                    """
+                    // Deploy to Kubernetes cluster
+                    sh '''
+                    if command -v kubectl &> /dev/null
+                    then
+                        echo "Starting Minikube and applying Kubernetes manifests..."
+                        minikube start
+                        kubectl apply -f k8s/deployment.yaml
+                    else
+                        echo "kubectl is not installed. Please install kubectl."
+                        exit 1
+                    fi
+                    '''
                 }
             }
         }
@@ -85,14 +73,17 @@ pipeline {
         stage('Expose Service') {
             steps {
                 script {
-                    // Expose service on port 443
-                    sh """
-                    ssh $DEPLOY_SERVER << EOF
-                    MINIKUBE_IP=\$(minikube ip)
-                    NODE_PORT=\$(kubectl get svc myapp-service -o=jsonpath='{.spec.ports[0].nodePort}' --namespace=$K8S_NAMESPACE)
-                    echo "App is exposed at https://\$MINIKUBE_IP:\$NODE_PORT"
-                    EOF
-                    """
+                    // Expose service
+                    sh '''
+                    if command -v kubectl &> /dev/null
+                    then
+                        echo "Exposing service..."
+                        kubectl expose deployment your-deployment --type=LoadBalancer --name=your-service
+                    else
+                        echo "kubectl is not installed. Please install kubectl."
+                        exit 1
+                    fi
+                    '''
                 }
             }
         }
@@ -100,6 +91,7 @@ pipeline {
 
     post {
         always {
+            // Clean up workspace after build
             cleanWs()
         }
     }
