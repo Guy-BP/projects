@@ -1,0 +1,106 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_IMAGE = "myapp:latest"
+        DOCKER_REGISTRY = "myregistry.com"
+        K8S_NAMESPACE = "default"
+        DEPLOY_SERVER = "user@deploy-server"
+    }
+
+    stages {
+        stage('Install Docker') {
+            steps {
+                script {
+                    // Install Docker on the build server
+                    sh '''
+                    sudo apt-get update
+                    sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                    sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+                    sudo apt-get update
+                    sudo apt-get install -y docker-ce
+                    sudo systemctl start docker
+                    sudo systemctl enable docker
+                    '''
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Sample Dockerfile for a simple Python app
+                    writeFile file: 'Dockerfile', text: '''
+                    FROM python:3.9-slim
+                    WORKDIR /app
+                    COPY . .
+                    RUN echo "from http.server import SimpleHTTPRequestHandler as Handler, HTTPServer as Server\nServer(('', 8080), Handler).serve_forever()" > app.py
+                    CMD ["python", "app.py"]
+                    '''
+                    // Build Docker image
+                    sh 'docker build -t $DOCKER_IMAGE .'
+                }
+            }
+        }
+
+        stage('Install Minikube & kubectl on Deploy Server') {
+            steps {
+                script {
+                    // Install Minikube and kubectl on the deployment server via SSH
+                    sh """
+                    ssh $DEPLOY_SERVER << EOF
+                    # Install kubectl
+                    curl -LO "https://storage.googleapis.com/kubernetes-release/release/\$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+                    chmod +x kubectl
+                    sudo mv kubectl /usr/local/bin/
+
+                    # Install Minikube
+                    curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+                    chmod +x minikube
+                    sudo install minikube /usr/local/bin/
+                    
+                    # Start Minikube
+                    minikube start --driver=none
+                    EOF
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    // Deploy Docker image as Kubernetes pod on the deploy server using Minikube
+                    sh """
+                    ssh $DEPLOY_SERVER << EOF
+                    kubectl create deployment myapp --image=$DOCKER_IMAGE --namespace=$K8S_NAMESPACE || kubectl set image deployment/myapp myapp=$DOCKER_IMAGE --namespace=$K8S_NAMESPACE
+                    kubectl expose deployment myapp --type=NodePort --port=443 --target-port=8080 --name=myapp-service --namespace=$K8S_NAMESPACE || true
+                    EOF
+                    """
+                }
+            }
+        }
+
+        stage('Expose Service') {
+            steps {
+                script {
+                    // Expose service on port 443
+                    sh """
+                    ssh $DEPLOY_SERVER << EOF
+                    MINIKUBE_IP=\$(minikube ip)
+                    NODE_PORT=\$(kubectl get svc myapp-service -o=jsonpath='{.spec.ports[0].nodePort}' --namespace=$K8S_NAMESPACE)
+                    echo "App is exposed at https://\$MINIKUBE_IP:\$NODE_PORT"
+                    EOF
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
