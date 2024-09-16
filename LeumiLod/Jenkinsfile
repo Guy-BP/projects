@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'ubuntu:20.04' // You can use any Docker image you prefer
+            args '-u root' // Run the container as root
+        }
+    }
 
     environment {
         DOCKER_IMAGE_NAME = 'simple-flask-app'
@@ -18,19 +23,26 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Install Docker if not already installed
+                    // Install Docker, kubectl, and Minikube within the Docker container
                     sh '''
+                        # Update package list
+                        apt-get update -qq
+
+                        # Install necessary packages
+                        apt-get install -y curl apt-transport-https
+
+                        # Install Docker
                         if ! command -v docker &> /dev/null; then
                             echo "Docker not found, installing..."
                             curl -fsSL https://get.docker.com -o get-docker.sh
                             sh get-docker.sh
+                            # Ensure Docker service is started
+                            systemctl start docker || true
                         else
                             echo "Docker is already installed."
                         fi
-                    '''
-                    
-                    // Install kubectl if not already installed
-                    sh '''
+
+                        # Install kubectl
                         if ! command -v kubectl &> /dev/null; then
                             echo "kubectl not found, installing..."
                             curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
@@ -39,10 +51,8 @@ pipeline {
                         else
                             echo "kubectl is already installed."
                         fi
-                    '''
-                    
-                    // Install Minikube if not already installed
-                    sh '''
+
+                        # Install Minikube
                         if ! command -v minikube &> /dev/null; then
                             echo "Minikube not found, installing..."
                             curl -LO "https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64"
@@ -51,10 +61,8 @@ pipeline {
                         else
                             echo "Minikube is already installed."
                         fi
-                    '''
-                    
-                    // Start Minikube
-                    sh '''
+
+                        # Start Minikube
                         if ! minikube status | grep -q "Running"; then
                             echo "Starting Minikube..."
                             minikube start --driver=none
