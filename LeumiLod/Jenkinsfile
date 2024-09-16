@@ -1,49 +1,36 @@
 pipeline {
     agent any
 
-    environment {
-        DOCKER_CLI_VERSION = '20.10.12'
-        KUBECTL_VERSION = '1.27.0'
-        MINIKUBE_VERSION = '1.27.0'
-        HOME_DIR = "${env.WORKSPACE}"
-    }
-
     stages {
         stage('Setup') {
             steps {
                 script {
-                    // Define paths
-                    def dockerBin = "${HOME_DIR}/docker/docker"
-                    def kubectlBin = "${HOME_DIR}/kubectl/kubectl"
-                    def minikubeBin = "${HOME_DIR}/minikube/minikube"
+                    // Create necessary directories
+                    sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/docker'
+                    sh 'mkdir -p /var/jenkins_home/workspace/BankLeumiApp/kubectl'
 
-                    // Install Docker
-                    sh """
-                        mkdir -p ${HOME_DIR}/docker
-                        curl -L https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz | tar xz -C ${HOME_DIR}/docker --strip-components=1
-                        export PATH=${HOME_DIR}/docker:$PATH
-                        ${dockerBin} --version
-                    """
+                    // Download Docker binary
+                    sh '''
+                    curl -L https://download.docker.com/linux/static/stable/x86_64/docker-20.10.12.tgz -o docker.tgz
+                    tar xz -C /var/jenkins_home/workspace/BankLeumiApp/docker --strip-components=1 < docker.tgz
+                    rm docker.tgz
+                    '''
 
-                    // Install kubectl
-                    sh """
-                        mkdir -p ${HOME_DIR}/kubectl
-                        curl -LO "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-                        chmod +x kubectl
-                        mv kubectl ${HOME_DIR}/kubectl/
-                        export PATH=${HOME_DIR}/kubectl:$PATH
-                        ${kubectlBin} version --client
-                    """
+                    // Download kubectl binary
+                    sh '''
+                    curl -LO https://dl.k8s.io/release/v1.27.0/bin/linux/amd64/kubectl
+                    mv kubectl /var/jenkins_home/workspace/BankLeumiApp/kubectl/
+                    chmod +x /var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl
+                    '''
 
-                    // Install Minikube
-                    sh """
-                        mkdir -p ${HOME_DIR}/minikube
-                        curl -LO "https://storage.googleapis.com/minikube/releases/v${MINIKUBE_VERSION}/minikube-linux-amd64"
-                        chmod +x minikube-linux-amd64
-                        mv minikube-linux-amd64 ${HOME_DIR}/minikube/minikube
-                        export PATH=${HOME_DIR}/minikube:$PATH
-                        ${minikubeBin} version
-                    """
+                    // Set PATH environment variable
+                    sh '''
+                    export PATH=/var/jenkins_home/workspace/BankLeumiApp/docker:/var/jenkins_home/workspace/BankLeumiApp/kubectl:$PATH
+                    '''
+
+                    // Verify installations
+                    sh '/var/jenkins_home/workspace/BankLeumiApp/docker/docker --version'
+                    sh '/var/jenkins_home/workspace/BankLeumiApp/kubectl/kubectl version --client'
                 }
             }
         }
@@ -52,10 +39,9 @@ pipeline {
             steps {
                 script {
                     // Build Docker image
-                    sh """
-                        export PATH=${HOME_DIR}/docker:$PATH
-                        docker build -t flask-app .
-                    """
+                    sh '''
+                    /var/jenkins_home/workspace/BankLeumiApp/docker/docker build -t my-image:latest .
+                    '''
                 }
             }
         }
@@ -64,10 +50,9 @@ pipeline {
             steps {
                 script {
                     // Start Minikube
-                    sh """
-                        export PATH=${HOME_DIR}/minikube:$PATH
-                        minikube start --driver=none
-                    """
+                    sh '''
+                    minikube start --driver=none
+                    '''
                 }
             }
         }
@@ -75,12 +60,10 @@ pipeline {
         stage('Deploy to Minikube') {
             steps {
                 script {
-                    // Deploy the Flask app
-                    sh """
-                        export PATH=${HOME_DIR}/kubectl:$PATH
-                        kubectl create deployment flask-app --image=flask-app
-                        kubectl expose deployment flask-app --type=NodePort --port=443
-                    """
+                    // Deploy application to Minikube
+                    sh '''
+                    kubectl apply -f deployment.yaml
+                    '''
                 }
             }
         }
@@ -88,13 +71,19 @@ pipeline {
         stage('Expose Service') {
             steps {
                 script {
-                    // Get Minikube service URL and print it
-                    sh """
-                        export PATH=${HOME_DIR}/kubectl:$PATH
-                        minikube service flask-app --url
-                    """
+                    // Expose service in Minikube
+                    sh '''
+                    kubectl expose deployment my-deployment --type=NodePort --name=my-service
+                    '''
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            // Clean up workspace
+            cleanWs()
         }
     }
 }
