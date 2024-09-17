@@ -38,7 +38,7 @@ pipeline {
             steps {
                 script {
                     sh '''
-                    minikube tunnel &
+                    nohup minikube tunnel &
                     sleep 10
                     kubectl get services
                     '''
